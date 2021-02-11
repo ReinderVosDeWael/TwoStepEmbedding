@@ -28,7 +28,7 @@ def brainsync(timeseries, reference=None):
     across subjects. NeuroImage, 172, 740-752.
     """
 
-    n_roi, n_time, n_subjects = timeseries.shape()
+    n_time, n_roi, n_subjects = timeseries.shape
     if n_roi > n_time:
         warnings.warn("There should be more regions (columns) than timepoints (rows).")
 
@@ -38,21 +38,21 @@ def brainsync(timeseries, reference=None):
                 "You must either provide a reference or multiple sets of timeseries."
             )
         elif n_subjects == 2:
-            reference = timeseries[:, :, 1]
+            idx = 0
         else:
-            reference = find_central_scan(timeseries)
+            idx = find_central_scan(timeseries)
+        reference = timeseries[:, :, idx]
 
     # Initialize arrays.
-    rotated_ts = np.zeros(n_roi, n_time, n_subjects)
-    rotations = np.zeros(n_roi, n_roi, n_subjects)
-
-    unitnorm_timeseries = timeseries / np.sqrt(np.sum(timeseries ** 2, axis=1))
+    rotated_ts = np.zeros((n_time, n_roi, n_subjects))
+    rotations = np.zeros((n_roi, n_roi, n_subjects))
 
     # Rotate the data.
     for i in range(n_subjects):
-        rotated_ts[:, :, i], rotations[:, :, i] = rotate_data(
-            unitnorm_timeseries[:, :, i], reference
+        ts_tmp, rotations[:, :, i] = rotate_data(
+            timeseries[:, :, i].T, reference.T
         )
+        rotated_ts[:, :, i] = ts_tmp.T
     return rotated_ts, rotations
 
 
@@ -62,21 +62,30 @@ def rotate_data(data, reference):
     Parameters
     ----------
     data : array-like
-        Data to be rotated.
+        Data (sample-by-feature) to be rotated.
     reference : array-like
         Reference dataset.
 
     Returns
     -------
     numpy.array
-        Rotated Data.
+        Rotated data.
     numpy.array
-        Rotations.
+        Rotation matrix.
+
+    Notes
+    -----
+    Output data is normalized to zero mean unit variance.
     """
-    U, _, V = np.linalg.svd(reference * data.T)
-    R = np.matmul(U, V.T)
-    Ys = np.matmul(R, data)
-    return Ys, R
+
+    # Ascertain unit variance and zero mean.
+    data = (data - np.mean(data, axis=0)) / np.std(data, axis=0)
+    reference = (reference - np.mean(reference, axis=0)) / np.std(reference, axis=0)
+
+    U, _, V = np.linalg.svd(reference @ data.T)
+    rotation_matrix = U @ V
+    rotated_data = rotation_matrix @ data
+    return rotated_data, rotation_matrix
 
 
 def find_central_scan(timeseries):
@@ -90,7 +99,7 @@ def find_central_scan(timeseries):
     Returns
     -------
     numpy.array
-        The scan most similarto all others.
+        The scan most similar to all others.
 
 
     """
@@ -99,27 +108,8 @@ def find_central_scan(timeseries):
     for i in range(n_subjects - 1):
         for j in range(i, n_subjects):
             D[i, j] = np.mean(
-                vecnorm(timeseries[:, :, i] - timeseries[:, :, j], axis=1), axis=1
+                np.linalg.norm(timeseries[:, :, i] - timeseries[:, :, j], axis=1)
             )
-
     D = D + D.T
-    idx = np.argmin(sum(D, axis=1))
-    return timeseries[:, :, idx]
-
-
-def vecnorm(x, axis=0):
-    """Computes the vector norm.
-
-    Parameters
-    ----------
-    x : array-like
-        Matrix of which vector norms will be computed
-    axis : int, optional
-        Axis along which to compute vector norms, by default 0
-
-    Returns
-    -------
-    numpy.array
-        Vector norms.
-    """
-    return np.sqrt(np.sum(x ** 2, axis=axis))
+    idx = np.argmin(np.sum(D, axis=1))
+    return idx
