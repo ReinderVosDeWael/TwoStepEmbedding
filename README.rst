@@ -7,6 +7,8 @@ BrainStat : A toolbox for statistical analysis of neuroimaging data
     :target: https://github.com/MICA-LAB/brainstat/actions
 .. image:: https://img.shields.io/badge/code%20style-black-000000.svg
     :target: https://github.com/psf/black
+.. image:: https://codecov.io/gh/ReinderVosDeWael/TwoStepEmbedding/branch/main/graph/badge.svg?token=ZHe5Uko3JD
+    :target: https://codecov.io/gh/ReinderVosDeWael/TwoStepEmbedding
 
 Welcome to TwoStepEmbedding's documentation!
 
