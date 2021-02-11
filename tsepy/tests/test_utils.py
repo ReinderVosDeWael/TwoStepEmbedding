@@ -2,7 +2,7 @@
 
 import pytest
 import numpy as np
-from tsepy.utils import *
+from tsepy.utils import brainsync, find_central_scan, rotate_data
 
 
 def test_brainsync():
