@@ -49,9 +49,7 @@ def brainsync(timeseries, reference=None):
 
     # Rotate the data.
     for i in range(n_subjects):
-        ts_tmp, rotations[:, :, i] = rotate_data(
-            timeseries[:, :, i].T, reference.T
-        )
+        ts_tmp, rotations[:, :, i] = rotate_data(timeseries[:, :, i].T, reference.T)
         rotated_ts[:, :, i] = ts_tmp.T
     return rotated_ts, rotations
 

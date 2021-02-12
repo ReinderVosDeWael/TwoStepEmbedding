@@ -13,7 +13,7 @@ def test_brainsync():
     for i in range(x1.shape[2]):
         assert np.allclose(np.corrcoef(x1[:, :, i]), np.corrcoef(y1[:, :, i]))
         if i != 0:
-            assert np.allclose(np.corrcoef(x1[:, :, i]), np.corrcoef(y2[:, :, i-1]))
+            assert np.allclose(np.corrcoef(x1[:, :, i]), np.corrcoef(y2[:, :, i - 1]))
     assert rotations.shape == (x1.shape[1], x1.shape[1], x1.shape[2])
 
 
