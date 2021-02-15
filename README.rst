@@ -21,7 +21,7 @@ Developers
 License
 -------
 
-The TwoStepEmbedding source code is available under the `BSD (3-Clause) license <https://github.com/MICA-LAB/BrainStat/blob/master/LICENSE>`_.
+The TwoStepEmbedding source code is available under the `BSD (3-Clause) license <https://github.com/ReinderVosdeWael/TwoStepEmbedding/blob/master/LICENSE>`_.
 
 
 Support
@@ -29,4 +29,4 @@ Support
 
 If you have problems installing the software or questions about usage and
 documentation, or something else related to BrainStat, you can post to the
-`Issues <https://github.com/MICA-MNI/BrainStat/issues>`_ section of our repository.
+`Issues <https://github.com/ReinderVosdeWael/TwoStepEmbedding/issues>`_ section of our repository.

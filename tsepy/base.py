@@ -1,15 +1,21 @@
+"""Methods for the TwoStepEmbedding class."""
 import numpy as np
-import sklearn as skl
 from brainspace.gradient import GradientMaps
-from brainspace.gradient.kernels import compute_affinity
-from .utils import brainsync
-from sklearn.base import BaseEstimator
+from tsepy.utils import brainsync, nystrom, optimize_kmeans
 
 
-class TwoStepEmbedding(BaseEstimator):
+class TwoStepEmbedding():
     """Two Step Embedding"""
-
-    def __init__(self, kernel="cosine", approach="dm", rng=0, d1=10, d2=10, klim=None):
+    def __init__(
+        self,
+        kernel="cosine",
+        approach="dm",
+        random_state=0,
+        sparsity=0,
+        n_comp_1=10,
+        n_comp_2=10,
+        klim=None,
+    ):
         """Constructor for two step embedding.
 
         Parameters
@@ -18,22 +24,29 @@ class TwoStepEmbedding(BaseEstimator):
             Kernel for gradient computation, by default "cosine".
         approach : str, optional
             Dimensionality reduction for gradient computation, by default "dm".
-        rng : int, optional
+        random_state : int, optional
             Initialization of random state, by default 0.
-        d1 : int, optional
-            Number of omponents to compute in the first embedding step, by
+        sparsity : int, optional
+            Matrix sparsification for kernel computation. Value must be in the
+            range [0,100), by default 0.
+        n_comp_1 : int, optional
+            Number of components to compute in the first embedding step, by
             default 10.
-        d2 : int, optional
-            Number of components to copmute in the second embedding step, by
+        n_comp_2 : int, optional
+            Number of components to compute in the second embedding step, by
             default 10.
+        klim : array-like, optional
+            2-element vector containing the minimum and maximum k for the
+            k-means optimization.
         """
 
         self.kernel = kernel
         self.approach = approach
-        self.rng = rng
-        self.d1 = d1
-        self.d2 = d2
-        self.klim = None
+        self.random_state = random_state
+        self.sparsity = sparsity
+        self.n_comp_1 = n_comp_1
+        self.n_comp_2 = n_comp_2
+        self.klim = klim
 
     def fit(self, timeseries, out_sample=None):
         """Fits the TwoStepEmbedding model
@@ -41,28 +54,32 @@ class TwoStepEmbedding(BaseEstimator):
         Parameters
         ----------
         timeseries : array-like
-            Region-by-time-by-subject timeseries array.
+            Time-by-region-by-subject timeseries array.
         out_sample : array-like, optional.
-            Region-by-time-by-subject timeseries array of out-of-sample
+            Time-by-region-by-subject timeseries array of out-of-sample
             resting-state data, by default None.
         """
 
         # Run the embedding.
-        self.psi_2, self.psi_1 = self.embedding(timeseries)
+        self.psi_2, self.psi_1 = self._embedding(timeseries)
 
         # Insert out-of-sample data
         if out_sample is not None:
             if out_sample.shape[2] != 1:
-                out_sample = brainsync(out_sample)
-            psi_1_hat = self.nystrom(out_sample, timeseries, self.psi_1)
-            psi_2_hat = self.nystrom(psi_1_hat, self.psi_1, self.psi_2)
-            self.psi_2 = np.concatenate((self.psi_2, psi_2_hat), axis=0)
+                out_sample, _ = brainsync(out_sample)
+            psi_1_hat = nystrom(out_sample, timeseries, self.psi_1, self._kernel)
+            
+            psi_1_hat = np.reshape(psi_1_hat, (timeseries.shape[0], -1), order="F")
+            psi_1_rs = np.reshape(self.psi_1, (timeseries.shape[0], -1), order="F")
+            
+            psi_2_hat = nystrom(psi_1_hat, psi_1_rs, self.psi_2, self._kernel)
+            self.psi_2 = np.concatenate((self.psi_2, np.squeeze(psi_2_hat)), axis=0)
 
         # Run k-means clustering.
-        if self.klim is not None:
-            self.labels = self.optimize_kmeans(self)
+        if self._klim is not None:
+            self.labels = optimize_kmeans(self.psi_2, self._klim, self._random_state)
 
-    def embedding(self, timeseries, sparsity=0):
+    def _embedding(self, timeseries):
         """Performs a dual embedding
 
         Parameters
@@ -77,104 +94,38 @@ class TwoStepEmbedding(BaseEstimator):
         numpy.array
             Eigenvectors of the first embedding.
         """
+
         # Step 1: Run GradientMaps for each subject.
         t, _, s = timeseries.shape
-        psi_1 = np.zeros((t, self.d1, s))
+        psi_1 = np.zeros((t, self._n_comp_1, s))
         for i in range(s):
-            gm = GradientMaps(
-                n_components=self.d1,
-                random_state=self.rng,
-                kernel=self.kernel,
-                approach=self.approach,
+            gm_1 = GradientMaps(
+                n_components=self._n_comp_1,
+                random_state=self._random_state,
+                kernel=self._kernel,
+                approach=self._approach,
             )
-            gm.fit(timeseries[:, :, i], sparsity=sparsity)
-            psi_1[:, :, i] = gm.gradients_
+            gm_1.fit(timeseries[:, :, i], sparsity=self._sparsity)
+            psi_1[:, :, i] = gm_1.gradients_
 
-        # Step 2: Run GradientMaps for the group-level gradients.
-        gm = GradientMaps(
-            n_components=self.d2,
-            random_state=self.rng,
-            kernel=self.kernel,
-            approach=self.approach,
+        # Step 2: Run GradientMaps for the subject-level gradients.
+        gm_2 = GradientMaps(
+            n_components=self._n_comp_2,
+            random_state=self._random_state,
+            kernel=self._kernel,
+            approach=self._approach,
         )
-        gm.fit(np.reshape(psi_1, (t, -1), order="F"), sparsity=sparsity)
-        psi_2 = gm.gradients_
+        gm_2.fit(np.reshape(psi_1, (t, -1), order="F"), sparsity=self._sparsity)
+        psi_2 = gm_2.gradients_
         return psi_2, psi_1
 
-    def nystrom(self, out_sample, reference_sample, reference_evec):
-        """Adds out of sample datapoints to a manifold.
-
-        Parameters
-        ----------
-        out_sample : array-like
-            Out-of-sample data.
-        reference_sample : array-like
-            Reference data.
-        reference_evec : array-like
-            Reference eigenvectors.
-        kernel : str
-            Kernel used for affinity computation.
-
-        References
-        ----------
-        Gao, S., Mishne, G., & Scheinost, D. (2020). Non-linear manifold
-        learning in fMRI uncovers a low-dimensional space of brain dynamics.
-        bioRxiv.
-        """
-        y_k = np.zeros((out_sample.shape[0], reference_evec.shape[1]))
-        for i in range(out_sample.shape[0]):
-            K = compute_affinity(
-                np.vstack(out_sample[i, :], reference_sample),
-                kernel=self.kernel,
-                sparsity=0,
-                non_negative=False,
-            )[1, :]
-            y_k[i, :] = np.sum(reference_evec[i, :] * K)
-        return y_k
-
-    def optimize_kmeans(self, M):
-        """Optimizes a k-means clustering using the Calinski-Harabasz criterion.
-
-        Parameters
-        ----------
-        M : array-like
-            Array (samples, features) to be clustered.
-
-        Returns
-        -------
-        labels : numpy.array
-            Vector of label assignments.
-
-        References
-        ----------
-        Caliński, T., & Harabasz, J. (1974). A dendrite method for cluster analysis.
-        Communications in Statistics-theory and Methods, 3(1), 1-27.
-        """
-
-        if self.klim[1] < self.klim[0]:
-            ValueError("kmin must be smaller than kmax.")
-
-        ks = range(self.klim[0], self.klim[1] + 1)
-        score = -np.inf
-
-        for i in ks:
-            kmeans_model = skl.cluster.KMeans(n_clusters=ks[i], random_state=self.rng)
-            kmeans_model = kmeans_model.fit(M)
-            new_labels = kmeans_model.labels_
-            new_score = skl.metrics.calinski_harabasz_score(M, new_labels)
-            if new_score > score:
-                score = new_score
-                labels = new_labels
-                k_opt = ks[i]
-
-        return labels, k_opt, score
-
     @property
-    def kernel(self):
-        return self._kernel
+    def _kernel(self):
+        """Kernel for gradient computation."""
+        return self.kernel
 
-    @kernel.setter
-    def kernel(self, x):
+    @_kernel.setter
+    def _kernel(self, x):
         valid_kernels = [
             "pearson",
             "spearman",
@@ -186,37 +137,76 @@ class TwoStepEmbedding(BaseEstimator):
             ValueError(
                 "Kernel must be None or one of the following: " ", ".join(valid_kernels)
             )
-        self._kernel = x
+        self.kernel = x
 
     @property
-    def approach(self):
-        return self._approach
+    def _approach(self):
+        """Dimensionality reduction for gradient computation."""
+        return self.approach
 
-    @approach.setter
-    def approach(self, x):
+    @_approach.setter
+    def _approach(self, x):
         valid_approaches = ["pca", "le", "dm"]
         if x not in valid_approaches:
             ValueError(
                 "Approach must be one of the following:  + " ", ".join(valid_approaches)
             )
-        self._approach = x
+        self.approach = x
 
     @property
-    def d1(self):
-        return self._d1
+    def _random_state(self):
+        """Initialization for the random state."""
+        return self.random_state
 
-    @d1.setter
-    def d1(self, x):
-        if not np.isscalar(x):
-            ValueError("d1 must be a scalar.")
-        self._d1 = x
+    @_random_state.setter
+    def _random_state(self, x):
+        self.random_state = x
 
     @property
-    def d2(self):
-        return self._d1
+    def _sparsity(self):
+        """Sparsity used in kernel computation."""
+        return self.sparsity
 
-    @d2.setter
-    def d2(self, x):
+    @_sparsity.setter
+    def _sparsity(self, x):
+        if x < 0 or x >= 100:
+            ValueError("Sparsity must be in the range [0, 100).")
+        self.sparsity = x
+
+    @property
+    def _n_comp_1(self):
+        """Number of output eigenvectors in the first embedding."""
+        return self.n_comp_1
+
+    @_n_comp_1.setter
+    def _n_comp_1(self, x):
         if not np.isscalar(x):
-            ValueError("d1 must be a scalar.")
-        self._d2 = x
+            ValueError("n_comp_1 must be a scalar.")
+        self.n_comp_1 = x
+
+    @property
+    def _n_comp_2(self):
+        """Number of output eigenvectors in the second embedding."""
+        return self.n_comp_2
+
+    @_n_comp_2.setter
+    def _n_comp_2(self, x):
+        if not np.isscalar(x):
+            ValueError("n_comp_1 must be a scalar.")
+        self.n_comp_2 = x
+
+    @property
+    def _klim(self):
+        """Limits for the k-means optimization."""
+        return self.klim
+
+    @_klim.setter
+    def _klim(self, x):
+        x = np.array(x)
+        if x.size != 2:
+            ValueError("klim must have exactly two elements.")
+        if x[0] > x[1]:
+            ValueError(
+                "First element of klim must be equal to or lower than the second element."
+            )
+        self.klim = x

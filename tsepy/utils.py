@@ -1,54 +1,145 @@
 """Utilities for the TwoStepEmbedding class"""
-
 import warnings
 import numpy as np
+from sklearn.metrics import calinski_harabasz_score
+from sklearn.cluster import KMeans
+from brainspace.gradient.kernels import compute_affinity
+
+
+def nystrom(out_sample, reference_sample, reference_evec, kernel="cosine"):
+    """Adds out of sample datapoints to a manifold using Nystrom extension.
+
+    Parameters
+    ----------
+    out_sample : array-like
+        Feature-by-sample-by-subject out-of-sample data.
+    reference_sample : array-like
+        Feature-by-sample-by-subject reference data.
+    reference_evec : array-like
+        Feature-by-component(-by-subject) reference eigenvectors. If no subject
+        dimension is provided, then all subjects are projected onto the same
+        manifold.
+    kernel : str
+        Kernel used for the affinity computation. For a list of valid kernels see
+        BrainSpace's compute_affinity, defaults to "cosine".
+
+    References
+    ----------
+    Bengio, Y., Paiement, J. F., Vincent, P., Delalleau, O., Le Roux, N., &
+    Ouimet, M. (2004). Out-of-sample extensions for lle, isomap, mds, eigenmaps,
+    and spectral clustering. Advances in neural information processing systems,
+    16, 177-184.
+    """
+
+    out_sample = np.atleast_3d(out_sample)
+    reference_sample = np.atleast_3d(reference_sample)
+    reference_evec = np.atleast_3d(reference_evec)
+
+    y_k = np.zeros((out_sample.shape[0], reference_evec.shape[1], out_sample.shape[2]))
+    for i in range(out_sample.shape[0]):
+        for j in range(out_sample.shape[2]):
+            out_sample_vec = np.atleast_2d(out_sample[i, :, j])
+            merged_data = np.concatenate(
+                (out_sample_vec, reference_sample[:, :, j]), axis=0
+            )
+            affinity = compute_affinity(
+                merged_data, kernel=kernel, sparsity=0, non_negative=False
+            )[0, 1:]
+            affinity = np.expand_dims(affinity, axis=1) / np.sum(affinity)
+            y_k[i, :, j] = np.sum(reference_evec[:, :, j] * affinity, axis=0)
+    return y_k
+
+
+def optimize_kmeans(M, klim, random_state=None):
+    """Optimizes a k-means clustering using the Calinski-Harabasz criterion.
+
+    Parameters
+    ----------
+    M : array-like
+        Array (samples, features) to be clustered.
+    klim : array-like
+        2-element array containing the minimm and maximum k.
+    random_state : int, RandomState instance, None
+        Random state initialization for k-means, by default None.
+
+    Returns
+    -------
+    labels : numpy.array
+        Vector of label assignments.
+
+    References
+    ----------
+    Caliński, T., & Harabasz, J. (1974). A dendrite method for cluster analysis.
+    Communications in Statistics-theory and Methods, 3(1), 1-27.
+    """
+
+    if klim[1] < klim[0]:
+        ValueError("kmin must be smaller than kmax.")
+
+    ks = range(klim[0], klim[1] + 1)
+    score = -np.inf
+
+    for i in range(len(ks)):
+        kmeans_model = KMeans(n_clusters=ks[i], random_state=random_state)
+        kmeans_model = kmeans_model.fit(M)
+        new_labels = kmeans_model.labels_
+        new_score = calinski_harabasz_score(M, new_labels)
+        if new_score > score:
+            score = new_score
+            labels = new_labels
+            k_opt = ks[i]
+
+    return labels, k_opt, score
 
 
 def brainsync(timeseries, reference=None):
-    """Syncronizes timeseries based on SVD rotation.
+    """Synchronizes timeseries based on SVD rotation.
 
     Parameters
     ----------
     timeseries : array-like
-        Time-by-region-by-subject array of timeseries.
+        Time-by-region-by-scan array of timeseries.
     reference : array-like, optional
-        Time-by-region matrix to use as reference, defaults to None.
+        Time-by-region matrix to use as reference. If no reference and more than
+        two scans are provided then the scan most similar to all others is used
+        as reference. If no reference and only two scans are provided, then the
+        first scan is used as reference. Defaults to None.
 
     Returns
     -------
     Y : numpy.array
-        Time-by-region-by-subject array of syncronized timeseries.
+        Time-by-region-by-scan array of syncronized timeseries.
     R : numpy.array
-        Time-by-time-by-subject array of rotation matrices.
+        Time-by-time-by-scan array of rotation matrices.
 
-    Refererences
-    ------------
+    References
+    ----------
     Joshi, A. A., Chong, M., Li, J., Choi, S., & Leahy, R. M. (2018). Are you
     thinking what I'm thinking? Synchronization of resting fMRI time-series
     across subjects. NeuroImage, 172, 740-752.
     """
 
-    n_time, n_roi, n_subjects = timeseries.shape
+    n_time, n_roi, n_scans = timeseries.shape
     if n_roi > n_time:
         warnings.warn("There should be more regions (columns) than timepoints (rows).")
 
     if reference is None:
-        if n_subjects == 1:
+        if n_scans == 1:
             ValueError(
                 "You must either provide a reference or multiple sets of timeseries."
             )
-        elif n_subjects == 2:
+        elif n_scans == 2:
             idx = 0
         else:
             idx = find_central_scan(timeseries)
         reference = timeseries[:, :, idx]
 
     # Initialize arrays.
-    rotated_ts = np.zeros((n_time, n_roi, n_subjects))
-    rotations = np.zeros((n_roi, n_roi, n_subjects))
+    rotated_ts = np.zeros((n_time, n_roi, n_scans))
+    rotations = np.zeros((n_roi, n_roi, n_scans))
 
     # Rotate the data.
-    for i in range(n_subjects):
+    for i in range(n_scans):
         ts_tmp, rotations[:, :, i] = rotate_data(timeseries[:, :, i].T, reference.T)
         rotated_ts[:, :, i] = ts_tmp.T
     return rotated_ts, rotations
@@ -73,7 +164,7 @@ def rotate_data(data, reference):
 
     Notes
     -----
-    Output data is normalized to zero mean unit variance.
+    Output data is normalized to zero mean and unit variance.
     """
 
     # Ascertain unit variance and zero mean.
@@ -87,7 +178,7 @@ def rotate_data(data, reference):
 
 
 def find_central_scan(timeseries):
-    """Finds the scan most similar to all others
+    """Finds the scan most similar to all other scans.
 
     Parameters
     ----------
@@ -98,9 +189,8 @@ def find_central_scan(timeseries):
     -------
     numpy.array
         The scan most similar to all others.
-
-
     """
+
     n_subjects = timeseries.shape[2]
     D = np.zeros((n_subjects, n_subjects))
     for i in range(n_subjects - 1):

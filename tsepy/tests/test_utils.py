@@ -1,12 +1,12 @@
 """Unit tests for utils functions."""
-
-import pytest
 import numpy as np
 from tsepy.utils import brainsync, find_central_scan, rotate_data
 
 
 def test_brainsync():
-    """Tests tsepy.utils.brainsync"""
+    """Tests whether the outputs of tsepy.utils.brainsync have te correct shape
+    and whether the within-matrix correlations of the input and output matrix
+    remain identical."""
     x1 = np.random.rand(10, 5, 3)
     y1, rotations = brainsync(x1)
     y2, _ = brainsync(x1[:, :, 1:], x1[:, :, 0])
@@ -18,14 +18,16 @@ def test_brainsync():
 
 
 def test_find_central_scan():
-    """ Tests tsepy.utils.find_central_scan"""
+    """Tests whether the output of tsepy.utils.find_central_scan is less than
+    its length."""
     x = np.random.rand(10, 10, 3)
     idx = find_central_scan(x)
     assert idx < x.shape[2]
 
 
 def test_rotate_data():
-    """ Tests tsepy.utils.rotate_data"""
+    """Tests whether the within-matrix correlation before and after rotation
+    with tsepy.utils.rotate_data remain identical"""
     data = np.random.rand(10, 5)
     reference = np.random.rand(10, 5)
 
