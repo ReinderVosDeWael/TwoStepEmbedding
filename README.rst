@@ -1,4 +1,4 @@
-BrainStat : A toolbox for statistical analysis of neuroimaging data
+TsePy : A toolbox for two step embedding.
 ===================================================================
 
 .. image:: https://img.shields.io/pypi/l/brainspace?label=License
@@ -10,7 +10,7 @@ BrainStat : A toolbox for statistical analysis of neuroimaging data
 .. image:: https://codecov.io/gh/ReinderVosDeWael/TwoStepEmbedding/branch/main/graph/badge.svg?token=ZHe5Uko3JD
     :target: https://codecov.io/gh/ReinderVosDeWael/TwoStepEmbedding
 
-Welcome to TwoStepEmbedding's documentation!
+Welcome to TsePy's documentation!
 
 Developers
 ----------
