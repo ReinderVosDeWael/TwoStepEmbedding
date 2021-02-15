@@ -25,17 +25,17 @@ def nystrom(out_sample, reference_sample, reference_evec, kernel="cosine"):
 
     References
     ----------
-    Bengio, Y., Paiement, J. F., Vincent, P., Delalleau, O., Le Roux, N., &
-    Ouimet, M. (2004). Out-of-sample extensions for lle, isomap, mds, eigenmaps,
-    and spectral clustering. Advances in neural information processing systems,
-    16, 177-184.
+    Gao, S., Mishne, G., & Scheinost, D. (2020). Non-linear manifold learning in
+    fMRI uncovers a low-dimensional space of brain dynamics. bioRxiv.
     """
 
     out_sample = np.atleast_3d(out_sample)
     reference_sample = np.atleast_3d(reference_sample)
     reference_evec = np.atleast_3d(reference_evec)
 
-    y_k = np.zeros((out_sample.shape[0], reference_evec.shape[1], out_sample.shape[2]))
+    out_sample_manifold = np.zeros(
+        (out_sample.shape[0], reference_evec.shape[1], out_sample.shape[2])
+    )
     for i in range(out_sample.shape[0]):
         for j in range(out_sample.shape[2]):
             out_sample_vec = np.atleast_2d(out_sample[i, :, j])
@@ -46,8 +46,11 @@ def nystrom(out_sample, reference_sample, reference_evec, kernel="cosine"):
                 merged_data, kernel=kernel, sparsity=0, non_negative=False
             )[0, 1:]
             affinity = np.expand_dims(affinity, axis=1) / np.sum(affinity)
-            y_k[i, :, j] = np.sum(reference_evec[:, :, j] * affinity, axis=0)
-    return y_k
+
+            out_sample_manifold[i, :, j] = np.sum(
+                reference_evec[:, :, j] * affinity, axis=0
+            )
+    return out_sample_manifold
 
 
 def optimize_kmeans(M, klim, random_state=None):
@@ -178,7 +181,8 @@ def rotate_data(data, reference):
 
 
 def find_central_scan(timeseries):
-    """Finds the scan most similar to all other scans.
+    """Finds the scan most similar to all other scans based on minimum Euclidean
+    distance between datapoints.
 
     Parameters
     ----------

@@ -39,6 +39,12 @@ class TwoStepEmbedding:
         klim : array-like, optional
             2-element vector containing the minimum and maximum k for the
             k-means optimization.
+
+        References
+        ----------
+        Gao, S., Mishne, G., & Scheinost, D. (2020). Non-linear manifold
+        learning in fMRI uncovers a low-dimensional space of brain dynamics.
+        bioRxiv.
         """
 
         self.kernel = kernel
@@ -62,7 +68,7 @@ class TwoStepEmbedding:
         """
 
         # Run the embedding.
-        self.psi_2, self.psi_1 = self._embedding(timeseries)
+        self._embedding(timeseries)
 
         # Insert out-of-sample data
         if out_sample is not None:
@@ -70,8 +76,8 @@ class TwoStepEmbedding:
                 out_sample, _ = brainsync(out_sample)
             psi_1_hat = nystrom(out_sample, timeseries, self.psi_1, self._kernel)
 
-            psi_1_hat = np.reshape(psi_1_hat, (timeseries.shape[0], -1), order="F")
-            psi_1_rs = np.reshape(self.psi_1, (timeseries.shape[0], -1), order="F")
+            psi_1_hat = np.reshape(psi_1_hat, (psi_1_hat.shape[0], -1), order="F")
+            psi_1_rs = np.reshape(self.psi_1, (self.psi_1.shape[0], -1), order="F")
 
             psi_2_hat = nystrom(psi_1_hat, psi_1_rs, self.psi_2, self._kernel)
             self.psi_2 = np.concatenate((self.psi_2, np.squeeze(psi_2_hat)), axis=0)
@@ -98,7 +104,7 @@ class TwoStepEmbedding:
 
         # Step 1: Run GradientMaps for each subject.
         t, _, s = timeseries.shape
-        psi_1 = np.zeros((t, self._n_comp_1, s))
+        self.psi_1 = np.zeros((t, self._n_comp_1, s))
         for i in range(s):
             gm_1 = GradientMaps(
                 n_components=self._n_comp_1,
@@ -107,7 +113,7 @@ class TwoStepEmbedding:
                 approach=self._approach,
             )
             gm_1.fit(timeseries[:, :, i], sparsity=self._sparsity)
-            psi_1[:, :, i] = gm_1.gradients_
+            self.psi_1[:, :, i] = gm_1.gradients_
 
         # Step 2: Run GradientMaps for the subject-level gradients.
         gm_2 = GradientMaps(
@@ -116,9 +122,8 @@ class TwoStepEmbedding:
             kernel=self._kernel,
             approach=self._approach,
         )
-        gm_2.fit(np.reshape(psi_1, (t, -1), order="F"), sparsity=self._sparsity)
-        psi_2 = gm_2.gradients_
-        return psi_2, psi_1
+        gm_2.fit(np.reshape(self.psi_1, (t, -1), order="F"), sparsity=self._sparsity)
+        self.psi_2 = gm_2.gradients_
 
     @property
     def _kernel(self):

@@ -7,7 +7,7 @@ from sklearn.utils.estimator_checks import check_estimator
 def test_TwoStepEmbedding_output():
     """Tests whether the outputs of TwoStepEmbedding have the correct shape."""
     x = np.random.rand(100, 50, 3)
-    y = np.random.rand(100, 50, 3)
+    y = np.random.rand(50, 50, 3)
     tse = TwoStepEmbedding(
         kernel="cosine",
         approach="dm",
