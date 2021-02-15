@@ -4,8 +4,9 @@ from brainspace.gradient import GradientMaps
 from tsepy.utils import brainsync, nystrom, optimize_kmeans
 
 
-class TwoStepEmbedding():
+class TwoStepEmbedding:
     """Two Step Embedding"""
+
     def __init__(
         self,
         kernel="cosine",
@@ -68,10 +69,10 @@ class TwoStepEmbedding():
             if out_sample.shape[2] != 1:
                 out_sample, _ = brainsync(out_sample)
             psi_1_hat = nystrom(out_sample, timeseries, self.psi_1, self._kernel)
-            
+
             psi_1_hat = np.reshape(psi_1_hat, (timeseries.shape[0], -1), order="F")
             psi_1_rs = np.reshape(self.psi_1, (timeseries.shape[0], -1), order="F")
-            
+
             psi_2_hat = nystrom(psi_1_hat, psi_1_rs, self.psi_2, self._kernel)
             self.psi_2 = np.concatenate((self.psi_2, np.squeeze(psi_2_hat)), axis=0)
 

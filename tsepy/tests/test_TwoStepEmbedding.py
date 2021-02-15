@@ -3,6 +3,7 @@ import numpy as np
 from tsepy import TwoStepEmbedding
 from sklearn.utils.estimator_checks import check_estimator
 
+
 def test_TwoStepEmbedding_output():
     """Tests whether the outputs of TwoStepEmbedding have the correct shape."""
     x = np.random.rand(100, 50, 3)
